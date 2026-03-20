@@ -1,24 +1,2 @@
-name: Windows-AUM-Patching
-on:
-  workflow_dispatch:
-permissions:
-  id-token: write
-  contents: read
-jobs:
-  patch:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Trigger AUM Windows
-        run: |
-          az vm install-patches \
-            --resource-group <YOUR_RG> \
-            --name <YOUR_WINDOWS_VM> \
-            --maximum-duration PT4H \
-            --reboot-setting IfRequired \
-            --classifications-to-include-win Critical Security
+----
+----
