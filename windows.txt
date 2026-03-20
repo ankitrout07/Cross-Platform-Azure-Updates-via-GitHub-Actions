@@ -1,0 +1,8 @@
+To run in terminal 
+
+az vm install-patches \
+  --resource-group CROSS-PLATFORM-UPDATER \
+  --name windows-srv \
+  --maximum-duration PT4H \
+  --reboot-setting IfRequired \
+  --classifications-to-include-win UpdateRollUp Definition
