@@ -1,7 +1,10 @@
 name: Windows-AUM-Patching
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Also allow manual runs
 
 permissions:
   id-token: write
@@ -25,12 +28,13 @@ jobs:
             --name Windows
 
       - name: Update System Packages (Choco)
+        continue-on-error: true
         run: |
           az vm run-command invoke \
             --resource-group CROSS-PLATFORM-UPDATE \
             --name Windows \
             --command-id RunPowerShellScript \
-            --scripts "choco upgrade all -y"
+            --scripts "if (Get-Command choco -ErrorAction SilentlyContinue) { choco upgrade all -y } else { Write-Warning 'Choco not found. Skipping packages.' }"
 
       - name: Trigger AUM Windows
         run: |

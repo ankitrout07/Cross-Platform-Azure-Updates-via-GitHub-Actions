@@ -1,7 +1,11 @@
 name: Ubuntu-AUM-Patching
 
 on:
-  workflow_dispatch: 
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Also allow manual runs
+
 
 permissions:
   id-token: write
