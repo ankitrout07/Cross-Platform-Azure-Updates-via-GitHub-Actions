@@ -23,9 +23,11 @@ jobs:
 
       - name: Assess Windows Patches
         run: |
+          echo "=== Assessing available patches ==="
           az vm assess-patches \
             --resource-group CROSS-PLATFORM-UPDATE \
-            --name Windows
+            --name Windows \
+            --output json
 
       - name: Update System Packages (Choco)
         continue-on-error: true
@@ -38,9 +40,12 @@ jobs:
 
       - name: Trigger AUM Windows
         run: |
+          echo "=== Installing Windows patches ==="
           az vm install-patches \
             --resource-group CROSS-PLATFORM-UPDATE \
             --name Windows \
             --maximum-duration PT4H \
             --reboot-setting IfRequired \
-            --classifications-to-include-win Critical Security
+            --classifications-to-include-win "Critical" "Security" "UpdateRollup" "FeaturePack" "ServicePack" "Definition" "Updates" \
+            --output json
+          echo "=== Patch installation complete ==="
