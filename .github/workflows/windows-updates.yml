@@ -18,6 +18,20 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Assess Windows Patches
+        run: |
+          az vm assess-patches \
+            --resource-group CROSS-PLATFORM-UPDATE \
+            --name Windows
+
+      - name: Update System Packages (Choco)
+        run: |
+          az vm run-command invoke \
+            --resource-group CROSS-PLATFORM-UPDATE \
+            --name Windows \
+            --command-id RunPowerShellScript \
+            --scripts "choco upgrade all -y"
+
       - name: Trigger AUM Windows
         run: |
           az vm install-patches \

@@ -18,6 +18,20 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Assess Ubuntu Patches
+        run: |
+          az vm assess-patches \
+            --resource-group CROSS-PLATFORM-UPDATE \
+            --name Ubuntu
+
+      - name: Update System Packages (apt-get)
+        run: |
+          az vm run-command invoke \
+            --resource-group CROSS-PLATFORM-UPDATE \
+            --name Ubuntu \
+            --command-id RunShellScript \
+            --scripts "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y"
+
       - name: Trigger AUM Linux
         run: |
           az vm install-patches \
