@@ -93,7 +93,7 @@ jobs:
         if: "${{ github.event.inputs.os_type == 'Ubuntu' || github.event.inputs.os_type == 'BOTH' }}"
         run: |
           echo "Patching Azure Ubuntu VM..."
-          az vm run-command invoke -g Cross-Platform -n Ubuntu \
+          az vm run-command invoke -g Cross-Platform -n ubuntu-azure \
             --command-id RunShellScript \
             --scripts @scripts/ubuntu/patch.sh
 
@@ -102,6 +102,6 @@ jobs:
         if: "${{ github.event.inputs.os_type == 'Windows' || github.event.inputs.os_type == 'BOTH' }}"
         run: |
           echo "Patching Azure Windows VM..."
-          az vm run-command invoke -g Cross-Platform -n Windows \
+          az vm run-command invoke -g Cross-Platform -n windows-azure \
             --command-id RunPowerShellScript \
             --scripts @scripts/windows/patch.ps1
