@@ -11,38 +11,64 @@ on:
         options:
           - AWS
           - Azure
+      os_type:
+        description: 'Select OS Type'
+        required: true
+        default: 'Ubuntu'
+        type: choice
+        options:
+          - Ubuntu
+          - Windows
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  # --- AWS JOB ---
+  # --- AWS EXECUTION BLOCK ---
   patch-aws:
-    name: "Execute AWS Patching (Mumbai)"
+    name: "AWS Execution"
     if: "${{ github.event.inputs.target_env == 'AWS' }}"
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
       - name: AWS OIDC Login
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-south-1
 
-      - name: Send SSM Command
+      - name: Run SSM Script
         run: |
+          OS="${{ github.event.inputs.os_type }}"
+          if [ "$OS" == "Ubuntu" ]; then
+            FILE="scripts/ubuntu/patch.sh"
+            DOC="AWS-RunShellScript"
+          else
+            FILE="scripts/windows/patch.ps1"
+            DOC="AWS-RunPowerShellScript"
+          fi
+          
+          SCRIPT_CONTENT=$(cat $FILE)
+          COMMANDS_JSON=$(jq -n --arg cmd "$SCRIPT_CONTENT" '[$cmd]')
+          
           aws ssm send-command \
-            --document-name "AWS-RunPatchBaseline" \
-            --targets "Key=tag:PatchGroup,Values=Production" \
-            --parameters 'Operation=["Install"]' \
-            --comment "Targeted AWS Patch from Selector"
+            --document-name "$DOC" \
+            --targets "Key=tag:OS,Values=$OS" \
+            --parameters "{\"commands\":$COMMANDS_JSON}" \
+            --comment "Selector Triggered Patching for $OS"
 
-  # --- AZURE JOB ---
+  # --- AZURE EXECUTION BLOCK ---
   patch-azure:
-    name: "Execute Azure Patching"
+    name: "Azure Execution"
     if: "${{ github.event.inputs.target_env == 'Azure' }}"
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
       - name: Azure OIDC Login
         uses: azure/login@v2
         with:
@@ -50,7 +76,19 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Trigger Azure Update Manager
+      - name: Run Azure Command
         run: |
-          az vm install-patches -g Cross-Platform-Update -n Ubuntu \
-            --reboot-setting IfRequired --classifications-to-include-linux Critical Security
+          OS="${{ github.event.inputs.os_type }}"
+          # Azure VM names are "Ubuntu" and "Windows" in this project
+          # Resource Group: Cross-Platform-Update
+          if [ "$OS" == "Ubuntu" ]; then
+            CMD_ID="RunShellScript"
+            FILE="@scripts/ubuntu/patch.sh"
+          else
+            CMD_ID="RunPowerShellScript"
+            FILE="@scripts/windows/patch.ps1"
+          fi
+          
+          az vm run-command invoke -g Cross-Platform-Update -n $OS \
+            --command-id $CMD_ID \
+            --scripts $FILE
