@@ -1,0 +1,50 @@
+name: Universal-MultiCloud-Patching
+
+on:
+  workflow_dispatch: # Manual trigger for both clouds
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # --- AZURE PATCHING JOB ---
+  patch-azure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Patch Azure Ubuntu
+        run: |
+          az vm install-patches -g Cross-Platform-Update -n Ubuntu \
+            --reboot-setting IfRequired --classifications-to-include-linux Critical Security
+
+      - name: Patch Azure Windows (Your custom PS Logic)
+        run: |
+          az vm run-command invoke -g Cross-Platform-Update -n Windows \
+            --command-id RunPowerShellScript \
+            --scripts "Install-Module -Name PSWindowsUpdate -Force; Get-WindowsUpdate -AcceptAll -Install -AutoReboot"
+
+  # --- AWS PATCHING JOB ---
+  patch-aws:
+    runs-on: ubuntu-latest
+    steps:
+      - name: AWS Login (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Patch AWS EC2 Fleet (Ubuntu & Windows)
+        run: |
+          # Targets all instances tagged with PatchGroup=Production
+          aws ssm send-command \
+            --document-name "AWS-RunPatchBaseline" \
+            --targets "Key=tag:PatchGroup,Values=Production" \
+            --parameters 'Operation=["Install"]' \
+            --comment "Universal Multi-Cloud Patching Trigger"

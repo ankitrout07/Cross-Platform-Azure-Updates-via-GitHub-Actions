@@ -1,40 +1,56 @@
-# Cross-Platform-Azure-Updates-via-GitHub-Actions
+# 🏗️ The Universal Architecture: Cross-Platform Multi-Cloud Patching
 
-## 📌 Project Overview
-This project implements a professional, high-uptime automation suite using **GitHub Actions** and **Azure OpenID Connect (OIDC). It provides a "Remote Control" for system maintenance on both **Ubuntu 24.04 LTS** and **Windows Server** instances within the Azure Portal.
+This project implements a professional, high-uptime automation suite using **GitHub Actions**, **Azure OIDC**, and **AWS OIDC**. It provides a centralized "Remote Control" for system maintenance on both Azure and AWS instances.
 
-The goal is to eliminate manual SSH/RDP sessions and ensure all cloud resources are patched and audited via a centralized dashboard.
+## 🚀 The Unified Workflow: `universal-patching.yml`
+This workflow combines high-logic PowerShell and Bash scripts for Azure with native AWS SSM commands. It assumes two identities (one in Azure and one in AWS) using OpenID Connect (OIDC) to eliminate the need for long-lived credentials.
+
+| Job | Platform | Target OS | Logic |
+| :--- | :--- | :--- | :--- |
+| **patch-azure** | Azure | Ubuntu & Windows | `az vm install-patches` + Custom PS |
+| **patch-aws** | AWS | EC2 Fleet | `aws ssm send-command` (SSM Agent) |
+
+---
+
+## 🛠️ Configuration Checklist (AWS)
+To ensure AWS "listens" to this script, perform these three steps:
+
+### 1. Tag your EC2 Instances
+AWS SSM uses tags to identify targets. Run this to tag your AWS VMs:
+```bash
+# Replace with your actual EC2 Instance IDs
+aws ec2 create-tags --resources i-0xxxxxxxxxxxx i-0yyyyyyyyyyyy --tags Key=PatchGroup,Value=Production
+```
+
+### 2. Verify SSM Agent
+Ensure the SSM Agent is "Online" on your instances:
+```bash
+aws ssm describe-instance-information --query "InstanceInformationList[*].{ID:InstanceId,Status:PingStatus,OS:PlatformName}" --output table
+```
+
+### 3. Establish AWS OIDC Trust
+Add the AWS IAM Identity Provider for GitHub:
+- **Provider URL**: `https://token.actions.githubusercontent.com`
+- **Audience**: `sts.amazonaws.com`
+- **Role Policy**: Ensure the role has `AmazonSSMFullAccess`.
 
 ---
 
-## 🏗 Architecture & Strategy
-To ensure stability and follow a "Senior DevOps" approach, the project is split into two independent, manually-triggered workflows.
+## ✅ Validation
+Once the workflow finishes, check the status of your global fleet:
 
-| Feature | Ubuntu Workflow | Windows Workflow |
-| :--- | :--- | :--- |
-| **Logic File** | `ubuntu-updates.yml` | `windows-updates.yml` |
-| **Trigger** | Manual (`workflow_dispatch`) | Manual (`workflow_dispatch`) |
-| **Package Manager**| `apt-get` | `Chocolatey (choco)` |
-| **Auth Method** | Azure OIDC (Secretless) | Azure OIDC (Secretless) |
-| **Execution** | One VM at a time | One VM at a time |
+### Azure Status
+```bash
+az vm get-instance-view -g Cross-Platform-Update -n Windows --query "instanceView.patchStatus"
+```
+
+### AWS Status
+```bash
+aws ssm list-command-invocations --details --query "CommandInvocations[*].{Instance:InstanceId,Status:Status}"
+```
 
 ---
-# Variables
-RG="Cross-Platform-Update"
 
-# 1. Trigger Ubuntu Patching
-az vm install-patches -g $RG -n Ubuntu --reboot-setting IfRequired --classifications-to-include-linux Security Critical
-
-# 2. Trigger Windows Patching
-az vm install-patches -g $RG -n Windows --reboot-setting IfRequired --classifications-to-include-win Security Critical
-
-# Variables
-RG="Cross-Platform-Update"
-
-# 1. Assess Windows
-az vm assess-patches -g $RG -n Windows
-
-# 2. Assess Ubuntu
-az vm assess-patches -g $RG -n Ubuntu
-
-az vm install-patches
+## 📂 Legacy Workflows
+- `ubuntu-updates.yml`: Azure-only Ubuntu patching.
+- `windows-updates.yml`: Azure-only Windows patching.
