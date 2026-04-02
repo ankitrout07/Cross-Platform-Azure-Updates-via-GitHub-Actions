@@ -1,4 +1,4 @@
-name: "🎯 Single-Cloud Patching Selector"
+name: "Single-Cloud Patching Selector"
 
 env:
   # AWS Configuration
@@ -7,9 +7,9 @@ env:
   AWS_TAG_VALUE_UBUNTU: "Ubuntu"
   AWS_TAG_VALUE_WINDOWS: "Windows"
   # Azure Configuration
-  AZ_RESOURCE_GROUP: "Cross-Platform"
-  AZ_VM_UBUNTU: "ubuntu-azure"
-  AZ_VM_WINDOWS: "windows-azure"
+  AZ_RESOURCE_GROUP: "CROSS-PLATFORM"
+  AZ_VM_UBUNTU: "Ubuntu"
+  AZ_VM_WINDOWS: "Windows"
 
 
 on:
