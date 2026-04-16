@@ -57,84 +57,148 @@ jobs:
         # Execute if os_type is Ubuntu or BOTH
         if: "${{ github.event.inputs.os_type == 'Ubuntu' || github.event.inputs.os_type == 'BOTH' }}"
         run: |
-          echo "Patching AWS Ubuntu nodes (Tag: $AWS_TAG_KEY=$AWS_TAG_VALUE_UBUNTU)..."
+          echo "Phase 1: Discovery - Finding AWS Ubuntu VMs (Tag: $AWS_TAG_KEY=$AWS_TAG_VALUE_UBUNTU)..."
           SCRIPT_CONTENT=$(cat scripts/ubuntu/patch.sh)
-          COMMANDS_JSON=$(jq -n --arg cmd "$SCRIPT_CONTENT" '[$cmd]')
+          COMMANDS_JSON=$(jq -n '[\"apt-get update && apt list --upgradable\"]')
           
-          RESPONSE=$(aws ssm send-command \
+          CHECK_RESPONSE=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --targets "Key=tag:$AWS_TAG_KEY,Values=$AWS_TAG_VALUE_UBUNTU" \
             --parameters "{\"commands\":$COMMANDS_JSON}" \
-            --comment "Selector Triggered Patching for Ubuntu" \
+            --comment "Check Updates for Ubuntu" \
             --output json)
 
-          COMMAND_ID=$(echo $RESPONSE | jq -r '.Command.CommandId')
-          REQUESTED_COUNT=$(echo $RESPONSE | jq -r '.Command.RequestedCount')
-          echo "Command sent with ID: $COMMAND_ID (Requested for $REQUESTED_COUNT targets)"
+          CHECK_COMMAND_ID=$(echo $CHECK_RESPONSE | jq -r '.Command.CommandId')
+          REQUESTED_COUNT=$(echo $CHECK_RESPONSE | jq -r '.Command.RequestedCount')
+          echo "Check command sent with ID: $CHECK_COMMAND_ID (Requested for $REQUESTED_COUNT targets)"
 
           if [ "$REQUESTED_COUNT" -eq 0 ]; then
             echo "Error: No targets matched the tag $AWS_TAG_KEY=$AWS_TAG_VALUE_UBUNTU! (RequestedCount=0)"
             exit 1
           fi
 
-          # Polling for status
-          echo "Waiting for command execution to complete..."
+          echo "Waiting for update check to complete..."
           while true; do
-            STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query "Commands[0].Status" --output text)
-            echo "Current Status: $STATUS"
-            
-            if [[ "$STATUS" == "Success" ]]; then
-              echo "Command completed successfully!"
-              exit 0
-            elif [[ "$STATUS" == "Failed" || "$STATUS" == "TimedOut" || "$STATUS" == "Cancelled" ]]; then
-              echo "Command execution failed with status: $STATUS"
+            CHECK_STATUS=$(aws ssm list-commands --command-id "$CHECK_COMMAND_ID" --query "Commands[0].Status" --output text)
+            if [[ "$CHECK_STATUS" == "Success" ]]; then
+              break
+            elif [[ "$CHECK_STATUS" == "Failed" || "$CHECK_STATUS" == "TimedOut" || "$CHECK_STATUS" == "Cancelled" ]]; then
+              echo "Update check failed with status: $CHECK_STATUS"
               exit 1
             fi
-            
-            sleep 15
+            sleep 10
           done
+
+          echo "Phase 2: Checking if updates are available..."
+          UPDATES_FOUND=$(aws ssm get-command-invocation --command-id "$CHECK_COMMAND_ID" --instance-id "$(aws ec2 describe-instances --filters "Name=tag:$AWS_TAG_KEY,Values=$AWS_TAG_VALUE_UBUNTU" --query 'Reservations[0].Instances[0].InstanceId' --output text)" --query 'StandardOutputContent' 2>/dev/null | grep -ci "upgradable" || echo "0")
+          
+          if [ "$UPDATES_FOUND" -gt 0 ] || [ -z "$UPDATES_FOUND" ]; then
+            echo "Updates available - Installing patches on all Ubuntu targets..."
+            COMMANDS_JSON=$(jq -n --arg cmd "$SCRIPT_CONTENT" '[\"$cmd\"]')
+            
+            RESPONSE=$(aws ssm send-command \
+              --document-name "AWS-RunShellScript" \
+              --targets "Key=tag:$AWS_TAG_KEY,Values=$AWS_TAG_VALUE_UBUNTU" \
+              --parameters "{\"commands\":$COMMANDS_JSON}" \
+              --comment "Selector Triggered Patching for Ubuntu" \
+              --output json)
+
+            COMMAND_ID=$(echo $RESPONSE | jq -r '.Command.CommandId')
+            echo "Patch command sent with ID: $COMMAND_ID"
+
+            echo "Waiting for patching to complete on all instances..."
+            while true; do
+              STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query "Commands[0].Status" --output text)
+              echo "Current Status: $STATUS"
+              
+              if [[ "$STATUS" == "Success" ]]; then
+                echo "All Ubuntu VMs patched successfully!"
+                exit 0
+              elif [[ "$STATUS" == "Failed" || "$STATUS" == "TimedOut" || "$STATUS" == "Cancelled" ]]; then
+                echo "Patching failed with status: $STATUS"
+                exit 1
+              fi
+              
+              sleep 15
+            done
+          else
+            echo "No updates available - All Ubuntu VMs are already on the latest version."
+            exit 0
+          fi
 
 
       - name: Patch AWS Windows (with Watcher)
         # Execute if os_type is Windows or BOTH
         if: "${{ github.event.inputs.os_type == 'Windows' || github.event.inputs.os_type == 'BOTH' }}"
         run: |
-          echo "Patching AWS Windows nodes (Tag: $AWS_TAG_KEY=$AWS_TAG_VALUE_WINDOWS)..."
+          echo "Phase 1: Discovery - Finding AWS Windows VMs (Tag: $AWS_TAG_KEY=$AWS_TAG_VALUE_WINDOWS)..."
           SCRIPT_CONTENT=$(cat scripts/windows/patch.ps1)
-          COMMANDS_JSON=$(jq -n --arg cmd "$SCRIPT_CONTENT" '[$cmd]')
+          COMMANDS_JSON=$(jq -n '[\"@(Get-WindowsUpdate -ListOnly).Count\"]')
           
-          RESPONSE=$(aws ssm send-command \
+          CHECK_RESPONSE=$(aws ssm send-command \
             --document-name "AWS-RunPowerShellScript" \
             --targets "Key=tag:$AWS_TAG_KEY,Values=$AWS_TAG_VALUE_WINDOWS" \
             --parameters "{\"commands\":$COMMANDS_JSON}" \
-            --comment "Selector Triggered Patching for Windows" \
+            --comment "Check Updates for Windows" \
             --output json)
 
-          COMMAND_ID=$(echo $RESPONSE | jq -r '.Command.CommandId')
-          REQUESTED_COUNT=$(echo $RESPONSE | jq -r '.Command.RequestedCount')
-          echo "Command sent with ID: $COMMAND_ID (Requested for $REQUESTED_COUNT targets)"
+          CHECK_COMMAND_ID=$(echo $CHECK_RESPONSE | jq -r '.Command.CommandId')
+          REQUESTED_COUNT=$(echo $CHECK_RESPONSE | jq -r '.Command.RequestedCount')
+          echo "Check command sent with ID: $CHECK_COMMAND_ID (Requested for $REQUESTED_COUNT targets)"
 
           if [ "$REQUESTED_COUNT" -eq 0 ]; then
             echo "Error: No targets matched the tag $AWS_TAG_KEY=$AWS_TAG_VALUE_WINDOWS! (RequestedCount=0)"
             exit 1
           fi
 
-          # Polling for status
-          echo "Waiting for command execution to complete..."
+          echo "Waiting for update check to complete..."
           while true; do
-            STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query "Commands[0].Status" --output text)
-            echo "Current Status: $STATUS"
-            
-            if [[ "$STATUS" == "Success" ]]; then
-              echo "Command completed successfully!"
-              exit 0
-            elif [[ "$STATUS" == "Failed" || "$STATUS" == "TimedOut" || "$STATUS" == "Cancelled" ]]; then
-              echo "Command execution failed with status: $STATUS"
+            CHECK_STATUS=$(aws ssm list-commands --command-id "$CHECK_COMMAND_ID" --query "Commands[0].Status" --output text)
+            if [[ "$CHECK_STATUS" == "Success" ]]; then
+              break
+            elif [[ "$CHECK_STATUS" == "Failed" || "$CHECK_STATUS" == "TimedOut" || "$CHECK_STATUS" == "Cancelled" ]]; then
+              echo "Update check failed with status: $CHECK_STATUS"
               exit 1
             fi
-            
-            sleep 15
+            sleep 10
           done
+
+          echo "Phase 2: Checking if updates are available..."
+          UPDATES_FOUND=$(aws ssm get-command-invocation --command-id "$CHECK_COMMAND_ID" --instance-id "$(aws ec2 describe-instances --filters "Name=tag:$AWS_TAG_KEY,Values=$AWS_TAG_VALUE_WINDOWS" --query 'Reservations[0].Instances[0].InstanceId' --output text)" --query 'StandardOutputContent' 2>/dev/null | grep -ciE '[1-9][0-9]*' || echo "0")
+          
+          if [ "$UPDATES_FOUND" -gt 0 ] || [ -z "$UPDATES_FOUND" ]; then
+            echo "Updates available - Installing patches on all Windows targets..."
+            COMMANDS_JSON=$(jq -n --arg cmd "$SCRIPT_CONTENT" '[\"$cmd\"]')
+            
+            RESPONSE=$(aws ssm send-command \
+              --document-name "AWS-RunPowerShellScript" \
+              --targets "Key=tag:$AWS_TAG_KEY,Values=$AWS_TAG_VALUE_WINDOWS" \
+              --parameters "{\"commands\":$COMMANDS_JSON}" \
+              --comment "Selector Triggered Patching for Windows" \
+              --output json)
+
+            COMMAND_ID=$(echo $RESPONSE | jq -r '.Command.CommandId')
+            echo "Patch command sent with ID: $COMMAND_ID"
+
+            echo "Waiting for patching to complete on all instances..."
+            while true; do
+              STATUS=$(aws ssm list-commands --command-id "$COMMAND_ID" --query "Commands[0].Status" --output text)
+              echo "Current Status: $STATUS"
+              
+              if [[ "$STATUS" == "Success" ]]; then
+                echo "All Windows VMs patched successfully!"
+                exit 0
+              elif [[ "$STATUS" == "Failed" || "$STATUS" == "TimedOut" || "$STATUS" == "Cancelled" ]]; then
+                echo "Patching failed with status: $STATUS"
+                exit 1
+              fi
+              
+              sleep 15
+            done
+          else
+            echo "No updates available - All Windows VMs are already on the latest version."
+            exit 0
+          fi
 
 
   # --- AZURE EXECUTION BLOCK ---
@@ -164,15 +228,38 @@ jobs:
           echo "Found $VM_COUNT matching VMs."
 
           if [ "$VM_COUNT" -gt 0 ]; then
-            echo "Phase 2: Execution - Patching discovered fleet"
+            echo "Phase 2: Checking for available updates on all VMs..."
+            UPDATES_AVAILABLE=false
             echo "$VM_LIST" | jq -c '.[]' | while read -r vm; do
               NAME=$(echo "$vm" | jq -r '.name')
               RG=$(echo "$vm" | jq -r '.rg')
-              echo "Targeting VM: $NAME in $RG..."
-              az vm run-command invoke -g "$RG" -n "$NAME" --command-id RunShellScript --scripts @scripts/ubuntu/patch.sh
+              echo "Checking updates on VM: $NAME in $RG..."
+              CHECK_OUTPUT=$(az vm run-command invoke -g "$RG" -n "$NAME" --command-id RunShellScript --scripts "sudo apt-get update && apt list --upgradable" --query 'value[0].message' -o tsv 2>&1)
+              if echo "$CHECK_OUTPUT" | grep -q "upgradable"; then
+                echo "  ✓ Updates available on $NAME"
+                UPDATES_AVAILABLE=true
+              else
+                echo "  ✓ No updates available on $NAME (already on latest version)"
+              fi
             done
+            
+            if [ "$UPDATES_AVAILABLE" = true ]; then
+              echo "Phase 3: Execution - Installing updates on all VMs and waiting for completion..."
+              echo "$VM_LIST" | jq -c '.[]' | while read -r vm; do
+                NAME=$(echo "$vm" | jq -r '.name')
+                RG=$(echo "$vm" | jq -r '.rg')
+                echo "Patching VM: $NAME in $RG..."
+                az vm run-command invoke -g "$RG" -n "$NAME" --command-id RunShellScript --scripts @scripts/ubuntu/patch.sh
+                echo "Waiting for VM $NAME to complete updates..."
+                sleep 30
+              done
+              echo "All Ubuntu VMs have been updated successfully!"
+            else
+              echo "Phase 3: No updates required - All Ubuntu VMs are already on the latest version."
+            fi
           else
-            echo "No Ubuntu VMs found for patching."
+            echo "Error: No Ubuntu VMs found matching tag $AWS_TAG_KEY=$AWS_TAG_VALUE_UBUNTU! Resource discovery failed."
+            exit 1
           fi
 
 
@@ -186,14 +273,37 @@ jobs:
           echo "Found $VM_COUNT matching VMs."
 
           if [ "$VM_COUNT" -gt 0 ]; then
-            echo "Phase 2: Execution - Patching discovered fleet"
+            echo "Phase 2: Checking for available updates on all VMs..."
+            UPDATES_AVAILABLE=false
             echo "$VM_LIST" | jq -c '.[]' | while read -r vm; do
               NAME=$(echo "$vm" | jq -r '.name')
               RG=$(echo "$vm" | jq -r '.rg')
-              echo "Targeting VM: $NAME in $RG..."
-              az vm run-command invoke -g "$RG" -n "$NAME" --command-id RunPowerShellScript --scripts @scripts/windows/patch.ps1
+              echo "Checking updates on VM: $NAME in $RG..."
+              CHECK_OUTPUT=$(az vm run-command invoke -g "$RG" -n "$NAME" --command-id RunPowerShellScript --scripts "@(Get-WindowsUpdate -ListOnly).Count" --query 'value[0].message' -o tsv 2>&1)
+              if [ "$(echo $CHECK_OUTPUT | grep -oE '[0-9]+' | head -1)" -gt 0 ] 2>/dev/null; then
+                echo "  ✓ Updates available on $NAME"
+                UPDATES_AVAILABLE=true
+              else
+                echo "  ✓ No updates available on $NAME (already on latest version)"
+              fi
             done
+            
+            if [ "$UPDATES_AVAILABLE" = true ]; then
+              echo "Phase 3: Execution - Installing updates on all VMs and waiting for completion..."
+              echo "$VM_LIST" | jq -c '.[]' | while read -r vm; do
+                NAME=$(echo "$vm" | jq -r '.name')
+                RG=$(echo "$vm" | jq -r '.rg')
+                echo "Patching VM: $NAME in $RG..."
+                az vm run-command invoke -g "$RG" -n "$NAME" --command-id RunPowerShellScript --scripts @scripts/windows/patch.ps1
+                echo "Waiting for VM $NAME to complete updates..."
+                sleep 30
+              done
+              echo "All Windows VMs have been updated successfully!"
+            else
+              echo "Phase 3: No updates required - All Windows VMs are already on the latest version."
+            fi
           else
-            echo "No Windows VMs found for patching."
+            echo "Error: No Windows VMs found matching tag $AWS_TAG_KEY=$AWS_TAG_VALUE_WINDOWS! Resource discovery failed."
+            exit 1
           fi
 
