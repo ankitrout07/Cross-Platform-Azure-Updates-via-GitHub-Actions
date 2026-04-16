@@ -59,7 +59,7 @@ jobs:
         run: |
           echo "Phase 1: Discovery - Finding AWS Ubuntu VMs (Tag: $AWS_TAG_KEY=$AWS_TAG_VALUE_UBUNTU)..."
           SCRIPT_CONTENT=$(cat scripts/ubuntu/patch.sh)
-          COMMANDS_JSON=$(jq -n '[\"apt-get update && apt list --upgradable\"]')
+          COMMANDS_JSON=$(jq -n --arg cmd "apt-get update && apt list --upgradable" '[$cmd]')
           
           CHECK_RESPONSE=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
@@ -94,7 +94,7 @@ jobs:
           
           if [ "$UPDATES_FOUND" -gt 0 ] || [ -z "$UPDATES_FOUND" ]; then
             echo "Updates available - Installing patches on all Ubuntu targets..."
-            COMMANDS_JSON=$(jq -n --arg cmd "$SCRIPT_CONTENT" '[\"$cmd\"]')
+            COMMANDS_JSON=$(jq -n --arg cmd "$SCRIPT_CONTENT" '[$cmd]')
             
             RESPONSE=$(aws ssm send-command \
               --document-name "AWS-RunShellScript" \
@@ -133,7 +133,7 @@ jobs:
         run: |
           echo "Phase 1: Discovery - Finding AWS Windows VMs (Tag: $AWS_TAG_KEY=$AWS_TAG_VALUE_WINDOWS)..."
           SCRIPT_CONTENT=$(cat scripts/windows/patch.ps1)
-          COMMANDS_JSON=$(jq -n '[\"@(Get-WindowsUpdate -ListOnly).Count\"]')
+          COMMANDS_JSON=$(jq -n --arg cmd "@(Get-WindowsUpdate -ListOnly).Count" '[$cmd]')
           
           CHECK_RESPONSE=$(aws ssm send-command \
             --document-name "AWS-RunPowerShellScript" \
@@ -168,7 +168,7 @@ jobs:
           
           if [ "$UPDATES_FOUND" -gt 0 ] || [ -z "$UPDATES_FOUND" ]; then
             echo "Updates available - Installing patches on all Windows targets..."
-            COMMANDS_JSON=$(jq -n --arg cmd "$SCRIPT_CONTENT" '[\"$cmd\"]')
+            COMMANDS_JSON=$(jq -n --arg cmd "$SCRIPT_CONTENT" '[$cmd]')
             
             RESPONSE=$(aws ssm send-command \
               --document-name "AWS-RunPowerShellScript" \
